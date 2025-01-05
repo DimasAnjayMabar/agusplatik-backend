@@ -66,11 +66,58 @@ app.post('/connect', (req, res) => {
 // === database login end === //
 
 // === database logout start === //
+//menghapus session dari node js (khusus untuk chrome dan web app)
+app.post('/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({
+                status: 'failure',
+                message: 'Failed to logout: ' + err.message,
+            });
+        }
 
+        res.status(200).json({
+            status: 'success',
+            message: 'Logged out successfully.',
+        });
+    });
+});
 // === database logout end === //
 
 // === create endpoint start === //
-
+//tambah distributor baru
+app.post('/new-distributor', (req, res) => {
+    const { server_ip, server_username, server_password, server_database, distributor_name, distributor_phone_number, distributor_email, distributor_ecommerce_link } = req.body;
+  
+    const client = new Client({
+      host: server_ip,
+      user: server_username,
+      password: server_password,
+      database: server_database,
+      port: 5432,
+    });
+  
+    client.connect()
+      .then(() => {
+        return client.query(`
+          INSERT INTO distributor (distributor_name, distributor_phone_number, distributor_email, distributor_ecommerce_link)
+          VALUES ($1, $2, $3, $4)
+          RETURNING *
+        `, [distributor_name, distributor_phone_number, distributor_email, distributor_ecommerce_link]); 
+      })
+      .then((result) => {
+        res.status(200).json({
+          status: 'success',
+          distributors: result.rows[0],
+        });
+      })
+      .catch((err) => {
+        res.status(500).json({
+          status: 'failure',
+          message: 'Failed to add distributor: ' + err.message,
+        });
+      })
+  });
 // === create endpoint end === //
 
 // === read endpoint start === //
