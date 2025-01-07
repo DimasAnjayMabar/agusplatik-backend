@@ -108,7 +108,6 @@ app.post('/new-distributor', (req, res) => {
       .then((result) => {
         res.status(200).json({
           status: 'success',
-          distributors: result.rows[0],
         });
       })
       .catch((err) => {
@@ -121,8 +120,75 @@ app.post('/new-distributor', (req, res) => {
 // === create endpoint end === //
 
 // === read endpoint start === //
+//view distributor
+app.post('/distributors', (req, res) => {
+  const { servername, username, password, database } = req.body;
 
+  //inisialisasi koneksi
+  const client = new Client({
+    host: servername,
+    user: username,
+    password: password,
+    database: database,
+    port: 5432,
+  });
+
+  //jika terkoneksi
+  client.connect()
+    .then(() => {
+      return client.query(`
+          SELECT * 
+          FROM distributor
+        `);
+    })
+    .then((result) => {
+      res.status(200).json({
+        status: 'success',
+        distributors: result.rows, 
+      });
+    })
+    .catch((err) => {
+      res.status(500).json({
+        status: 'failure',
+        message: 'Failed to fetch distributors: ' + err.message,
+      });
+    })
+});
 // === read endpoint end === //
+
+// === read based on id endpoint start === //
+app.post('/distributor-details', (req, res) => {
+  const { servername, username, password, database, distributor_id} = req.body;
+
+  const client = new Client({
+    host: servername,
+    user: username,
+    password: String(password),
+    database: database,
+    port: 5432,
+  });
+
+  //jika terkoneksi
+  client.connect()
+    .then(() => {
+      return client.query(`
+        SELECT * FROM distributor WHERE distributor_id = $1
+      `, [distributor_id]);
+    })
+    .then((result) => {
+      res.status(200).json({
+        status: 'success',
+        distributor: result.rows[0],
+      });
+    })
+    .catch((err) => {
+      res.status(500).json({
+        status: 'failure',
+        message: 'Failed to fetch distributors: ' + err.message,
+      });
+    })
+});
+// === read based on id endpoint end === //
 
 // === update endpoint start === //
 
@@ -133,7 +199,60 @@ app.post('/new-distributor', (req, res) => {
 // === delete endpoint end === //
 
 // === misc endpoint start === //
+//verify admin to setting
+app.post('/verify-admin', async (req, res) => {
+  const { server_ip, server_username, server_password, server_database, admin_username, admin_password } = req.body;
 
+  const client = new Client({
+    host: server_ip,
+    user: server_username,
+    password: String(server_password),
+    database: server_database,
+    port: 5432,
+  });
+
+  try {
+    await client.connect(); // Properly waiting for the connection to establish
+
+    // Query untuk mencari admin berdasarkan username
+    const result = await client.query('SELECT * FROM admin WHERE admin_username = $1', [admin_username]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        status: 'failure',
+        message: 'Admin user not found',
+      });
+    }
+
+    const admin = result.rows[0];
+
+    // Verifikasi password menggunakan bcrypt
+    // const isMatch = await compare(admin_password, admin.admin_password);
+
+    if (admin_password === admin.admin_password) {
+      // Verifikasi berhasil, kirim data admin dalam response
+      return res.status(200).json({
+        status: 'success',
+        message: 'Admin verified successfully',
+        admin: {
+          admin_id: admin.admin_id,  // Kirimkan id_admin sebagai integer
+          admin_username: admin.admin_username,  // Pastikan mengirimkan username_admin yang benar
+        },
+      });
+    } else {
+      return res.status(401).json({
+        status: 'failure',
+        message: 'Incorrect password',
+      });
+    }
+  } catch (err) {
+    console.error('Error:', err);
+    return res.status(500).json({
+      status: 'failure',
+      message: 'Internal server error: ' + err.message,
+    });
+  }
+});
 // === misc endpoint end === //
 
 //memulai server
