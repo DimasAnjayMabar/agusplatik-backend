@@ -5,6 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 
 const app = express();
@@ -122,14 +123,14 @@ app.post('/new-distributor', (req, res) => {
 // === read endpoint start === //
 //view distributor
 app.post('/distributors', (req, res) => {
-  const { servername, username, password, database } = req.body;
+  const { server_ip, server_username, server_password, server_database } = req.body;
 
   //inisialisasi koneksi
   const client = new Client({
-    host: servername,
-    user: username,
-    password: password,
-    database: database,
+    host: server_ip,
+    user: server_username,
+    password: server_password,
+    database: server_database,
     port: 5432,
   });
 
@@ -158,13 +159,13 @@ app.post('/distributors', (req, res) => {
 
 // === read based on id endpoint start === //
 app.post('/distributor-details', (req, res) => {
-  const { servername, username, password, database, distributor_id} = req.body;
+  const { server_ip, server_username, server_password, server_database, distributor_id} = req.body;
 
   const client = new Client({
-    host: servername,
-    user: username,
-    password: String(password),
-    database: database,
+    host: server_ip,
+    user: server_username,
+    password: String(server_password),
+    database: server_database,
     port: 5432,
   });
 
@@ -195,6 +196,54 @@ app.post('/distributor-details', (req, res) => {
 // === update endpoint end === //
 
 // === delete endpoint start === //
+app.post('/delete-distributor', async (req, res) => {
+  const { server_ip, server_username, server_password, server_database, distributor_id } = req.body;
+
+  try {
+    // Membuat koneksi ke database
+    const client = new Client({
+      host: server_ip,
+      user: server_username,
+      password: String(server_password),
+      database: server_database,
+      port: 5432,
+    });
+
+    await client.connect();
+
+    // Menghapus distributor berdasarkan ID
+    const deleteResult = await client.query(
+      'DELETE FROM distributor WHERE distributor_id = $1 RETURNING *',
+      [distributor_id]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      return res.status(404).json({
+        status: 'failure',
+        message: 'Distributor tidak ditemukan',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Distributor berhasil dihapus',
+      distributor: deleteResult.rows[0],
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'failure',
+      message: 'Terjadi kesalahan: ' + err.message,
+    });
+  } finally {
+    // Pastikan koneksi database selalu ditutup
+    if (client) {
+      await client.end();
+    }
+  }
+});
+// === delete endpoint end === //
+
+// === delete endpoint end === //
 
 // === delete endpoint end === //
 
@@ -251,6 +300,47 @@ app.post('/verify-admin', async (req, res) => {
       status: 'failure',
       message: 'Internal server error: ' + err.message,
     });
+  }
+});
+
+//verify pin
+app.post('/verify-pin', async (req, res) => {
+  const { server_ip, server_username, server_password, server_database, admin_pin } = req.body;
+
+  const client = new Client({
+    host: server_ip,
+    user: server_username,
+    password: String(server_password),
+    database: server_database,
+    port: 5432,
+  });
+
+  try {
+    await client.connect();
+
+    // Verifikasi admin PIN
+    const result = await client.query('SELECT * FROM admin WHERE admin_pin = $1', [admin_pin]);
+    const admin = result.rows[0];
+
+    if (!admin) {
+      return res.status(401).json({
+        status: 'failure',
+        message: 'Admin PIN tidak valid',
+      });
+    }
+
+    // Kirim token dalam response
+    res.status(200).json({
+      status: 'success',
+      message: 'Verifikasi berhasil',
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'failure',
+      message: 'Terjadi kesalahan: ' + err.message,
+    });
+  } finally {
+    await client.end();
   }
 });
 // === misc endpoint end === //
