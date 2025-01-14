@@ -189,10 +189,135 @@ app.post('/distributor-details', (req, res) => {
       });
     })
 });
+
+//fetch admin identity
+app.post('/admin', (req, res) => {
+  const { server_ip, server_username, server_password, server_database, admin_id} = req.body;
+
+  const client = new Client({
+    host: server_ip,
+    user: server_username,
+    password: String(server_password),
+    database: server_database,
+    port: 5432,
+  });
+
+  client.connect()
+  .then(() => {
+    return client.query('select * from admin where admin_id = $1', [admin_id]);
+  })
+  .then((result) => {
+    if(result.rows.length === 0){
+      return res.status(404).json({
+        status: 'failure',
+        message: 'Admin not found'
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      admin: result.rows[0]
+    });
+  })
+  .catch((err) => {
+    res.status(500).json({
+      status: 'failure',
+      message: 'Failed to fetch admin details: ' + err.message,
+    });
+  })
+});
 // === read based on id endpoint end === //
 
 // === update endpoint start === //
+//edit pin for admin
+app.post('/edit-pin', async (req, res) => {
+  const { server_ip, server_username, server_password, server_database, admin_id, new_pin } = req.body;
 
+  const client = new Client({
+    host: server_ip,
+    user: server_username,
+    password: String(server_password),
+    database: server_database,
+    port: 5432,
+  });
+
+  try {
+    await client.connect();  // Menggunakan async/await untuk penanganan koneksi yang lebih baik
+ 
+    // Menggunakan crypt untuk hashing PIN sebelum disimpan
+    await client.query(
+      `UPDATE admin SET admin_pin = crypt($1, gen_salt('bf')) WHERE admin_id = $2`,
+      [new_pin, admin_id]
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Pin successfully updated'
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: 'failure',
+      message: 'Failed to edit pin: ' + err.message,
+    });
+  }
+});
+
+//edit distributor
+app.post('/edit-distributor', async (req, res) => {
+  const {
+    server_ip,
+    server_username,
+    server_password,
+    server_database,
+    distributor_id,
+    distributor_name,
+    distributor_phone_number,
+    distributor_email,
+    distributor_ecommerce_link,
+  } = req.body;
+
+  // Pastikan semua parameter yang diperlukan sudah ada
+  if (!server_ip || !server_username || !server_password || !server_database || !distributor_id) {
+    return res.status(400).json({
+      status: 'failure',
+      message: 'Missing required fields',
+    });
+  }
+
+  const client = new Client({
+    host: server_ip,
+    user: server_username,
+    password: String(server_password),
+    database: server_database,
+    port: 5432,
+  });
+
+  try {
+    await client.connect();  // Menggunakan async/await untuk penanganan koneksi yang lebih baik
+
+    // Update distributor data (email, name, phone, ecommerce_link)
+    await client.query(
+      `UPDATE distributor 
+       SET distributor_name = $1, distributor_phone_number = $2, distributor_email = $3, distributor_ecommerce_link = $4
+       WHERE distributor_id = $5`,
+      [distributor_name, distributor_phone_number, distributor_email, distributor_ecommerce_link, distributor_id]
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Distributor successfully updated',
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: 'failure',
+      message: 'Failed to update distributor: ' + err.message,
+    });
+  } finally {
+    await client.end();  // Jangan lupa untuk menutup koneksi
+  }
+});
 // === update endpoint end === //
 
 // === delete endpoint start === //
@@ -234,11 +359,6 @@ app.post('/delete-distributor', async (req, res) => {
       status: 'failure',
       message: 'Terjadi kesalahan: ' + err.message,
     });
-  } finally {
-    // Pastikan koneksi database selalu ditutup
-    if (client) {
-      await client.end();
-    }
   }
 });
 // === delete endpoint end === //
@@ -318,18 +438,27 @@ app.post('/verify-pin', async (req, res) => {
   try {
     await client.connect();
 
-    // Verifikasi admin PIN
-    const result = await client.query('SELECT * FROM admin WHERE admin_pin = $1', [admin_pin]);
-    const admin = result.rows[0];
+    // Ambil semua hash PIN dari database
+    const result = await client.query('SELECT admin_pin FROM admin');
+    const admins = result.rows;
 
-    if (!admin) {
+    // Iterasi untuk mencocokkan input PIN dengan hash PIN
+    let isMatch = false;
+    for (const admin of admins) {
+      if (await bcrypt.compare(admin_pin, admin.admin_pin)) {
+        isMatch = true;
+        break; // Berhenti jika ada yang cocok
+      }
+    }
+
+    if (!isMatch) {
       return res.status(401).json({
         status: 'failure',
         message: 'Admin PIN tidak valid',
       });
     }
 
-    // Kirim token dalam response
+    // Kirim token atau respon sukses
     res.status(200).json({
       status: 'success',
       message: 'Verifikasi berhasil',
@@ -339,8 +468,6 @@ app.post('/verify-pin', async (req, res) => {
       status: 'failure',
       message: 'Terjadi kesalahan: ' + err.message,
     });
-  } finally {
-    await client.end();
   }
 });
 // === misc endpoint end === //
