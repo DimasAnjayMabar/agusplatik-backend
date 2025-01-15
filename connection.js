@@ -138,9 +138,10 @@ app.post('/distributors', (req, res) => {
   client.connect()
     .then(() => {
       return client.query(`
-          SELECT * 
-          FROM distributor
-        `);
+        SELECT * 
+        FROM distributor
+        WHERE distributor_isactive = true
+      `);
     })
     .then((result) => {
       res.status(200).json({
@@ -275,10 +276,12 @@ app.post('/edit-distributor', async (req, res) => {
     distributor_phone_number,
     distributor_email,
     distributor_ecommerce_link,
+    distributor_change_detail,
+    admin_pin,  // Admin pin sent from Flutter
   } = req.body;
 
-  // Pastikan semua parameter yang diperlukan sudah ada
-  if (!server_ip || !server_username || !server_password || !server_database || !distributor_id) {
+  // Ensure all required fields are provided
+  if (!server_ip || !server_username || !server_password || !server_database || !distributor_id || !admin_pin) {
     return res.status(400).json({
       status: 'failure',
       message: 'Missing required fields',
@@ -294,9 +297,31 @@ app.post('/edit-distributor', async (req, res) => {
   });
 
   try {
-    await client.connect();  // Menggunakan async/await untuk penanganan koneksi yang lebih baik
+    await client.connect();
 
-    // Update distributor data (email, name, phone, ecommerce_link)
+    // 1. Verify admin pin by querying all admins and comparing each admin's pin
+    const adminResult = await client.query(`SELECT * FROM admin`);
+    const admins = adminResult.rows;
+
+    let admin = null;
+
+    // Loop through each admin and compare the provided pin with the stored hash
+    for (const adminRecord of admins) {
+      const isPinValid = await bcrypt.compare(admin_pin, adminRecord.admin_pin);  // Assuming admin_pin is the hashed pin
+      if (isPinValid) {
+        admin = adminRecord; // Admin found, break the loop
+        break;
+      }
+    }
+
+    if (!admin) {
+      return res.status(400).json({
+        status: 'failure',
+        message: 'Admin pin is incorrect',
+      });
+    }
+
+    // 2. Update distributor data
     await client.query(
       `UPDATE distributor 
        SET distributor_name = $1, distributor_phone_number = $2, distributor_email = $3, distributor_ecommerce_link = $4
@@ -304,9 +329,16 @@ app.post('/edit-distributor', async (req, res) => {
       [distributor_name, distributor_phone_number, distributor_email, distributor_ecommerce_link, distributor_id]
     );
 
+    // 3. Insert into distributorhistory with the admin_id
+    await client.query(
+      `INSERT INTO distributorhistory (distributor_id, admin_id, distributor_change_detail)
+       VALUES ($1, $2, $3)`,
+      [distributor_id, admin.admin_id, distributor_change_detail]
+    );
+
     res.status(200).json({
       status: 'success',
-      message: 'Distributor successfully updated',
+      message: 'Distributor successfully updated and change history recorded',
     });
 
   } catch (err) {
@@ -314,8 +346,6 @@ app.post('/edit-distributor', async (req, res) => {
       status: 'failure',
       message: 'Failed to update distributor: ' + err.message,
     });
-  } finally {
-    await client.end();  // Jangan lupa untuk menutup koneksi
   }
 });
 // === update endpoint end === //
