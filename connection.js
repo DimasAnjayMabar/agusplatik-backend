@@ -156,6 +156,42 @@ app.post('/distributors', (req, res) => {
       });
     })
 });
+
+//view category
+app.post('/categories', (req, res) => {
+  const { server_ip, server_username, server_password, server_database } = req.body;
+
+  //inisialisasi koneksi
+  const client = new Client({
+    host: server_ip,
+    user: server_username,
+    password: server_password,
+    database: server_database,
+    port: 5432,
+  });
+
+  //jika terkoneksi
+  client.connect()
+    .then(() => {
+      return client.query(`
+        SELECT * 
+        FROM category
+        WHERE category_isdeleted = false
+      `);
+    })
+    .then((result) => {
+      res.status(200).json({
+        status: 'success',
+        categories: result.rows, 
+      });
+    })
+    .catch((err) => {
+      res.status(500).json({
+        status: 'failure',
+        message: 'Failed to fetch categories: ' + err.message,
+      });
+    })
+});
 // === read endpoint end === //
 
 // === read based on id endpoint start === //
